@@ -7,41 +7,48 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-type SearchQuery struct {
-	SQL            string `json:"sql"`
-	StartTime      int64  `json:"start_time"`
-	EndTime        int64  `json:"end_time"`
-	From           int    `json:"from"`
-	Size           int    `json:"size"`
-	TrackTotalHits bool   `json:"track_total_hits"`
-	SQLMode        string `json:"sql_mode"`
+type Query struct {
+	Term  string `json:"term"`
+	Field string `json:"field"`
 }
 
 type SearchRequest struct {
-	Query SearchQuery `json:"query"`
+	SearchType string   `json:"search_type"`
+	Query      Query    `json:"query"`
+	SortFields []string `json:"sort_fields"`
+	From       int      `json:"from"`
+	MaxResults int      `json:"max_results"`
+	Source     []string `json:"_source"`
 }
 
-func createSearchRequest(stream string, value string, from int, size int) ([]byte, error) {
-	searchQuery := SearchQuery{
-		SQL:            fmt.Sprintf("SELECT * FROM %s WHERE match_all_ignore_case('%s') ORDER BY id", stream, value),
-		StartTime:      1703900002074496,
-		EndTime:        time.Now().UnixMicro(),
-		From:           from,
-		Size:           size,
-		TrackTotalHits: true,
-		SQLMode:        "full",
+func createSearchRequest(value string, from int, size int) ([]byte, error) {
+	if value == "" {
+		return nil, fmt.Errorf("Value cannot be empty")
+	}
+	query := Query{
+		Term:  value,
+		Field: "_all",
+	}
+	searchRequest := SearchRequest{
+		SearchType: "match",
+		Query:      query,
+		SortFields: []string{"id"},
+		From:       from,
+		MaxResults: size,
+		Source:     []string{"from", "to", "date", "subject", "content"},
 	}
 
-	request := SearchRequest{Query: searchQuery}
+	searchRequestJSON, err := json.Marshal(searchRequest)
+	if err != nil {
+		return nil, fmt.Errorf("Error marshaling search request %v", err)
+	}
 
-	return json.Marshal(request)
+	return searchRequestJSON, nil
 }
 
 func getRequiredEnvVars(vars []string) (map[string]string, error) {
@@ -61,7 +68,7 @@ func getRequiredEnvVars(vars []string) (map[string]string, error) {
 }
 
 func search(stream string, value string, from int, size int) ([]byte, error) {
-	searchRequestJSON, err := createSearchRequest(stream, value, from, size)
+	searchRequestJSON, err := createSearchRequest(value, from, size)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +80,7 @@ func search(stream string, value string, from int, size int) ([]byte, error) {
 	url, username, password := envVars["SEARCH_SERVER_URL"], envVars["SEARCH_SERVER_USERNAME"], envVars["SEARCH_SERVER_PASSWORD"]
 
 	client := &http.Client{}
-	request, err := http.NewRequest("POST", url+"/_search", bytes.NewReader(searchRequestJSON))
+	request, err := http.NewRequest("POST", url+stream+"/_search", bytes.NewReader(searchRequestJSON))
 	if err != nil {
 		return nil, fmt.Errorf("Error creating HTTP request %v", err)
 	}
@@ -121,20 +128,28 @@ func main() {
 
 	static(router)
 
-	router.Post("/api/default/_search", func(w http.ResponseWriter, r *http.Request) {
+	// if len(os.Args) < 2 {
+	// 	fmt.Println("Port is missing.")
+	// 	return
+	// }
+	// port := os.Args[2]
 
-		stream := r.URL.Query().Get("stream")
-		value := r.URL.Query().Get("value")
-		from, err := strconv.Atoi(r.URL.Query().Get("from"))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Error converting 'from' to int %v", err), http.StatusBadRequest)
-		}
-		size, err := strconv.Atoi(r.URL.Query().Get("size"))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Error converting 'size' to int %v", err), http.StatusBadRequest)
+	router.Post("/api/_search", func(w http.ResponseWriter, r *http.Request) {
+
+		var searchParams struct {
+			Stream string `json:"stream"`
+			Value  string `json:"value"`
+			From   int    `json:"from"`
+			Size   int    `json:"size"`
 		}
 
-		searchResponseBytes, err := search(stream, value, from, size)
+		err := json.NewDecoder(r.Body).Decode(&searchParams)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error decoding request body: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		searchResponseBytes, err := search(searchParams.Stream, searchParams.Value, searchParams.From, searchParams.Size)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
