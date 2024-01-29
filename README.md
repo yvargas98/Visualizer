@@ -8,15 +8,23 @@ Aplicación para buscar contenidos de Enron Corp DB
 2. At /Visualizer execute in terminal eb init and follow the steps
     - region us-east-1
     - Select an application or create one
+    - Select a platform (Go)
+    - Select a platform branch
     - Continue with CodeCommit?: n
-    - Add ssh?: n
+    - Set ssh?: n
 
-3. At root in /Visualizer add a file named .ebignore and paste this: !application
+3. Execute eb create and follow the steps
+    - Environment Name
+    - DNS CNAME prefix
+    - Load balancer type: classic 
+    - Enable Spot Fleet request?: n
 
-4. Compile the Vue App and then at /Visualizer execute: GOOS=linux GOARCH=amd64  go build -o bin/application
+4. At root in /Visualizer add a file named .ebignore and paste this: !application
 
-4. Execute: eb deploy
+5. Compile the Vue App and then at /Visualizer execute: GOOS=linux GOARCH=amd64  go build -o bin/application
 
-5. For add an environment variable execute: eb setenv NAME=value
+6. Execute: eb deploy
 
-6. This proyect isn't work because there is a problem with the Open Observe API to search content, view here https://discuss.openobserve.ai/t/-search-api-authentication-issue-in-zinc-cloud/2L3e2
+7. For add an environment variable execute: eb setenv NAME=value
+
+8. This proyect isn't work because there is a problem with the Open Observe API to search content, view here https://discuss.openobserve.ai/t/-search-api-authentication-issue-in-zinc-cloud/2L3e2
